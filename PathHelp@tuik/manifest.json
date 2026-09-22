@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Pathhelp with tuik",
+  "version": "2.0.1",
+  "description": "Assistant for CBC / PBS / MP result entry: abnormal findings, DC fix, one-tap MP/PBS text. Everything stays in the browser.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "Pathhelp with tuik",
+    "default_popup": "sidepanel.html"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
