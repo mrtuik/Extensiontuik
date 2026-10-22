@@ -144,6 +144,21 @@ export function plateletBump(currentRaw, rng = Math.random) {
   return { value: Math.round(cur + add), add };
 }
 
+// Setup → Add Platelet (its own rule, separate from the manual icon above):
+//   80 – <120  → random 140..160
+//   120 – <150 → random 150..199
+// Anything else (below 80, or 150 and above) is left alone.
+export function plateletAuto(currentRaw, rng = Math.random) {
+  const cur = parseNum(currentRaw);
+  if (cur === null) return null;
+  let lo, hi;
+  if (cur >= 80 && cur < 120) { lo = 140; hi = 160; }
+  else if (cur >= 120 && cur < 150) { lo = 150; hi = 199; }
+  else return null;
+  const value = lo + Math.floor(rng() * (hi - lo + 1));
+  return { value, add: Math.round(value - cur) };
+}
+
 export function dcDisplay(key, raw) {
   const n = parseNum(raw);
   if (n === null) return String(raw ?? '').trim() || '–';

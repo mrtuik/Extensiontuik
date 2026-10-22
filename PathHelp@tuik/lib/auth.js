@@ -12,7 +12,7 @@ export const SESSION_HOURS = 12; // access stays open this long, or until profil
 //   crypto.subtle.digest('SHA-256', new TextEncoder().encode('NEW PASSWORD')).then(b => console.log([...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('')))
 export const PROFILES = [
   { name: 'Tuik', hash: '77b95e204fc3ea2eeeb40aa243c844c8ea993dd6259131174d9c7e2aec756348', avatar: 'a7' },
-  { name: 'Sagor Pandey', hash: 'cf58473877dc5de7325facd993804be4726d2acfcb921928d6c2614036131e19', avatar: 'a2' },
+  { name: 'Sagar', hash: 'ef4cb8d1e7d700133f879c0df8674a889f740b4c5befd57bc4fd633ae04879da', avatar: 'a2' },
 ];
 
 export async function sha256Hex(text) {

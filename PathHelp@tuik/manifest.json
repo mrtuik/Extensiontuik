@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pathhelp with tuik",
-  "version": "2.0.1",
+  "version": "2.3.0",
   "description": "Assistant for CBC / PBS / MP result entry: abnormal findings, DC fix, one-tap MP/PBS text. Everything stays in the browser.",
   "permissions": [
     "storage"
@@ -28,5 +28,17 @@
       ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Z",
+        "mac": "Alt+Z"
+      },
+      "description": "Open Pathhelp with tuik"
+    }
+  }
 }

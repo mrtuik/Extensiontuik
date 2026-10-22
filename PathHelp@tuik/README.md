@@ -28,7 +28,7 @@
 - The app-window mark (same as the header logo) is now the extension icon: `icons/16|48|128.png`. It is what Chrome shows in the toolbar, the extensions page and the side-panel title bar, and on the login screen. After updating, Reload the extension on `chrome://extensions` (Chrome caches icons).
 
 ## Setup box + Submit card (v0.2.0)
-- **Setup card** ("Setup your Extra" + Setup button) sits under the quote, full width like the MP / PBS cards → opens the Setup box. Options are saved on this device.
+- **Setup card** ("Setup your Extra" + Setup button) sits under the quote. **Paperless entry** options (toggle, Script URL, Token, Open next PT) sit attached under the PT search input.
 - **Confirm** (was "Auto confirm"; off by default): ticks the Confirm box of every result row when you search a patient, or when the panel first sees a patient page. Rows you untick afterwards stay unticked.
 - **Add Atypical** (was "Auto Atypical Cell"; off by default): puts `..` in the Atypical Cell box if it is empty — on patient load, and again just before Submit.
 - **Add MP** (off by default): on patient load, if the page has an MP row and it is empty, pastes your MP text (the saved MP template) into it. While Add MP is on, the MP row is skipped by **Confirm** (never auto-ticked); you can still tick it yourself from its icon or the confirm-all toggle. Existing MP text is never overwritten.

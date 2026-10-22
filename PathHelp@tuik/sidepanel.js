@@ -1,5 +1,5 @@
 import { icon } from './lib/icons.js';
-import { evaluate, planFix, planLisCalc, planLisFill, lisFillTargets, plateletBump, ORDER, parseNum, indian } from './lib/engine.js';
+import { evaluate, planFix, planLisCalc, planLisFill, lisFillTargets, plateletBump, plateletAuto, ORDER, parseNum, indian } from './lib/engine.js';
 import { MP_NEGATIVE, PBS_NORMAL, toSingleLine } from './lib/templates.js';
 import { PARAM_META } from './lib/values.js';
 import { QUOTES } from './lib/quotes.js';
@@ -47,7 +47,10 @@ let searching = null; // { value } while a PT search is waiting for HMIS to answ
 let searchMsg = ''; // last PT search problem (shown with a Retry button)
 let searchTimer = null;
 let lastDayCode = '';
-let setup = { autoConfirm: false, autoAtyp: false, autoMp: false, autoPlt: false }; // Setup box options (saved on this device)
+// Paperless backend (Google Apps Script web app) — built in, nothing to type in the panel.
+const P_URL = 'https://script.google.com/macros/s/AKfycbyNGwI_BnkUvcKfsY4enbZPSimzMdua_6wrjCBR9JgQqfrTUcU1q4f0GhEoKN2i2Lt-/exec';
+const P_TOKEN = '5ac2739777e8'; // Apps Script token (from setup → Execution log)
+let setup = { autoConfirm: false, autoAtyp: false, autoMp: false, mpConfirm: false, autoPlt: false, autoOpen: true, paperless: false, pUrl: '', pToken: '', pNext: true }; // Setup box options (saved on this device)
 let lastAutoKey = ''; // patient load that auto-confirm / auto-atypical last ran for
 let lisCalc = { reg: null, vals: {} }; // boxes the LIS button calculated for this patient (shown with a "calc" tag until edited)
 let lisFill = { reg: null, vals: {} }; // boxes the LIS button auto-filled with random normal values (re-rolled on the next click, "auto" tag until edited)
@@ -89,7 +92,7 @@ async function loadTemplates() { ({ templates: tpl = {} } = await chrome.storage
 const saveTemplates = () => chrome.storage.local.set({ templates: tpl });
 
 // ───────── storage: Setup options ─────────
-async function loadSetup() { const { setup: s } = await chrome.storage.local.get('setup'); setup = { autoConfirm: false, autoAtyp: false, autoMp: false, autoPlt: false, ...(s || {}) }; }
+async function loadSetup() { const { setup: s } = await chrome.storage.local.get('setup'); setup = { autoConfirm: false, autoAtyp: false, autoMp: false, mpConfirm: false, autoPlt: false, autoOpen: true, paperless: false, pUrl: '', pToken: '', pNext: true, ...(s || {}) }; }
 const saveSetup = () => chrome.storage.local.set({ setup });
 
 function ageChip(age) {
@@ -223,6 +226,7 @@ async function toggleDemo() {
   view = 'main';
   await pull();
   toast(demoMode ? 'Demo mode on — sample data only' : 'Demo mode off');
+  if (setup.paperless) pFetch(true);
 }
 
 // ───────── PT number search ─────────
@@ -259,10 +263,28 @@ function loadedPt() {
   return { date: m[1], serial: m[2] };
 }
 
+// Short tags for the extra tests this patient has on the HMIS page (MP, PBS, BT, CT, ESR, ABO …)
+function testTag(label) {
+  const l = String(label || '').toLowerCase();
+  if (/bleeding/.test(l)) return 'BT';
+  if (/clotting/.test(l)) return 'CT';
+  if (/\besr\b|sedimentation/.test(l)) return 'ESR';
+  if (/\babo\b|blood\s*group|grouping/.test(l)) return 'ABO';
+  const t = String(label || '').replace(/\s+/g, ' ').trim();
+  return t.length <= 6 ? t.toUpperCase() : t.split(' ').map((w) => w[0]).join('').slice(0, 5).toUpperCase();
+}
+function testChipsHtml() {
+  if (!state) return '';
+  const tags = [];
+  if ('mp' in (state.values || {})) tags.push('MP');
+  if ('pbs' in (state.values || {})) tags.push('PBS');
+  for (const x of state.extras || []) { const t = testTag(x.label); if (t && !tags.includes(t)) tags.push(t); }
+  return tags.length ? `<span class="tchips" aria-label="Tests on this patient">${tags.map((t) => `<span class="tchip">${esc(t)}</span>`).join('')}</span>` : '';
+}
 function ptMsgInner() {
   if (searching) return `<span class="busy"><i class="spin"></i>Searching ${esc(searching.value)}…</span>`;
   if (searchMsg) return `<span class="err">${icon('triangle-alert', 13)}<span>${esc(searchMsg)}</span></span><button class="pretry" data-act="ptgo">Retry</button>`;
-  return (ptSerial ? `<span class="prev">${icon('border-right', 15)}${esc(ptFull())}</span>` : `<span class="hint">Type serial — searches when you tap outside</span>`);
+  return (ptSerial ? `<span class="prev">${icon('border-right', 15)}${esc(ptFull())}</span>` : `<span class="hint">Type serial — searches when you tap outside</span>`) + testChipsHtml();
 }
 function refreshPtBar() { // update in place — never re-render while the technician is typing
   const m = $('#ptMsg'); if (m) m.innerHTML = ptMsgInner();
@@ -303,6 +325,47 @@ function searchHtml(solo = false) {
       <button id="ptGo" class="ptgo" data-act="ptgo" aria-label="Search patient" ${!ptSerial || searching ? 'disabled' : ''}>${icon('tab-search-rounded', 22)}</button>
     </div>
     <div id="ptMsg" class="psmsg">${ptMsgInner()}</div>
+    ${paperlessNowHtml()}
+    ${paperlessOptsHtml()}
+  </div>`;
+}
+let pxOpen = false; // Paperless options expanded?
+function paperlessNowHtml() { // the black "NOW" card, shown with the search (racks / lots live in the full Paperless view)
+  if (!setup.paperless || pErr) return '';
+  const lot = pCurLot();
+  if (!lot) return '';
+  const curId = pCurrentId();
+  const all = lot.racks.flatMap((r) => r.items), done = all.filter((x) => x.done).length;
+  let nowRack = null, nowPos = 0;
+  for (const r of lot.racks) r.items.forEach((x, i) => { if (x.id.toUpperCase() === curId) { nowRack = r.rack; nowPos = i + 1; } });
+  const m = PT_RE.exec(curId);
+  const nowTxt = m
+    ? `<b>PT${esc(m[2])}</b><span>${nowRack != null ? `Rack ${nowRack} · slot ${nowPos}` : 'not in this Lot'}${searching ? ' · searching…' : ''}</span>`
+    : `<span class="plidle">Not started — open all racks to pick</span>`;
+  const seq = all.map((x) => x.id.toUpperCase()), ci = seq.indexOf(curId);
+  const canPrev = ci > 0, canNext = ci >= 0 ? ci < seq.length - 1 : all.some((x) => !x.done);
+  return `<div class="plnow pxnow"><span class="plk">NOW</span><span class="plnowt">${nowTxt}</span><span class="plcnt">${done}/${all.length}</span></div>
+    <div class="pxnav">
+      <button class="pxnb" data-act="pprev" ${canPrev && !searching ? '' : 'disabled'}>${icon('arrow-left', 15)}Previous</button>
+      <button class="pxnb" data-act="pnextslot" ${canNext && !searching ? '' : 'disabled'}>Next${icon('arrow-right', 15)}</button>
+    </div>`;
+}
+function paperlessOptsHtml() {
+  const on = !!setup.paperless;
+  const toggle = `<button class="pxcfg ${pxOpen ? 'open' : ''}" data-act="pxcfg" aria-expanded="${pxOpen}" aria-label="Paperless entry options">${icon('chevron-down', 18)}</button>`;
+  if (!pxOpen) return `<div class="pxset closed">${toggle}</div>`; // collapsed: only the expand icon under the search
+  return `<div class="pxset">
+    <div class="pxhead">
+      <span class="sic">${icon('opacity', 18)}</span>
+      <span class="stxt"><b>Paperless entry</b></span>
+      ${on ? `<button class="pxcfg" data-act="pfull" aria-label="Open all racks and lots">${icon('maximize', 18)}</button>` : ''}
+      ${toggle}
+      <button class="pxsw" data-act="setopt" data-key="paperless" role="switch" aria-checked="${on}" aria-label="Paperless entry"><span class="sw ${on ? 'on' : ''}"></span></button>
+    </div>
+    ${on ? `<div class="pxbody">
+      <button class="pxnext" data-act="setopt" data-key="pNext" role="switch" aria-checked="${!!setup.pNext}">
+        <span class="stxt"><b>Open next PT after Submit</b><small>Ticks this PT done, then searches the next pending one</small></span><span class="sw ${setup.pNext ? 'on' : ''}"></span></button>
+    </div>` : ''}
   </div>`;
 }
 const idleCardHtml = () => `<div class="patient idle"><div class="pmain"></div>${searchHtml()}</div>`;
@@ -405,17 +468,17 @@ async function onUndo() {
 async function onPltBump() {
   const cur = parseNum(state.values.plt);
   if (cur === null) return toast('Enter Platelet first.');
-  const p = plateletBump(state.values.plt);
-  if (!p) return toast(cur < 80 ? 'Platelet is below 80 — too abnormal to auto-adjust.' : 'Platelet is 140 or above — nothing to bump.');
-  await doWrite([{ key: 'plt', value: String(p.value) }], 'LIS', `Platelet +${p.add} → ${p.value}`);
+  const p = plateletAuto(state.values.plt);
+  if (!p) return toast(cur < 80 ? 'Platelet is below 80 — too abnormal to auto-adjust.' : 'Platelet is 150 or above — nothing to bump.');
+  await doWrite([{ key: 'plt', value: String(p.value) }], 'LIS', `Platelet ${cur} → ${p.value}`);
 }
 
 async function bumpPlatelet(next) {
   if (!('plt' in next.values)) return;
-  const p = plateletBump(next.values.plt);
+  const p = plateletAuto(next.values.plt);
   if (!p) return;
   const r = await send({ type: 'write', updates: [{ key: 'plt', value: String(p.value) }] });
-  if (r?.written?.length) { session.actions.add('LIS'); scheduleHistory(); toast(`Platelet +${p.add} → ${p.value}`); }
+  if (r?.written?.length) { session.actions.add('LIS'); scheduleHistory(); toast(`Platelet ${next.values.plt} → ${p.value}`); }
 }
 
 async function applyMp() {
@@ -701,7 +764,7 @@ function lisHtml() {
       ? `<button type="button" class="lis-fix ${ev.dc.needsFix ? '' : 'dim'}" data-act="fix" title="Make DC counts whole numbers" aria-label="Make DC counts whole numbers">${icon('button-cursor', 16)}</button>`
         + (undo ? `<button type="button" class="lis-fix" data-act="undo" title="Undo DC fix" aria-label="Undo DC fix">${icon('undo3-filled', 16)}</button>` : '')
       : k === 'plt'
-      ? `<button type="button" class="lis-fix" data-act="pltbump" title="Bump Platelet up by a random 60–100" aria-label="Bump Platelet up by a random 60–100">${icon('button-cursor', 16)}</button>`
+      ? `<button type="button" class="lis-fix" data-act="pltbump" title="Platelet 80–119 → random 140–160, 120–149 → random 150–199" aria-label="Platelet 80–119 → random 140–160, 120–149 → random 150–199">${icon('button-cursor', 16)}</button>`
       : '';
     return `<label class="lis-row ${cls}" for="lis-${k}">
       <span class="lis-k">${esc(label)}${flag}${tag}${fillTag}${dcTools}</span>
@@ -951,7 +1014,6 @@ function showQr() {
   const shut = () => dlg.close();
   dlg.querySelector('[data-x="close"]').onclick = shut;
   dlg.onclick = (e) => { if (e.target === dlg) shut(); };
-  dlg.onclose = () => { dlg.onclick = null; dlg.onclose = null; };
   dlg.showModal();
 }
 
@@ -1074,6 +1136,143 @@ function focusPt() {
 }
 function setView(to) { view = to; animate = 'view'; render(); }
 
+// ───────── Paperless entry ─────────
+// Rack photos go to a Google Sheet (Apps Script app); here the PT numbers come back grouped by Lot → Rack, tap one to search it.
+let pData = null, pLot = null, pRack = 'all', pBusy = false, pErr = '', demoP = null;
+const demoPaperless = () => {
+  const d = dayCode(new Date()), mk = (rack, nums) => ({ rack, items: nums.map((n) => ({ id: `${d}PT${n}`, done: false })) });
+  return { ok: true, lots: [ // newest first
+    { id: 3, start: Date.now() - 6e5, racks: [mk(1, [210, 204, 218, 207, 211, 215, 203, 219]), mk(2, [221, 208, 213, 206])] },
+    { id: 2, start: Date.now() - 18e5, racks: [mk(1, [180, 174, 188, 177, 181, 185, 173, 189, 182, 176]), mk(2, [191, 178, 183])] },
+    { id: 1, start: Date.now() - 36e5, racks: [mk(1, [150, 134, 148, 133, 141, 145, 143, 152, 151, 144]), mk(2, [130, 138, 146, 142, 149, 116])] },
+  ] };
+};
+// Samples differ every day: the list resets every day at P_RESET_HOUR (0 = midnight, phone time). Demo data is not filtered.
+const P_RESET_HOUR = 0;
+function pDayStart(now = Date.now()) {
+  const d = new Date(now);
+  d.setHours(P_RESET_HOUR, 0, 0, 0);
+  if (d.getTime() > now) d.setDate(d.getDate() - 1);
+  return d.getTime();
+}
+let pArchivedFor = 0;
+const pLots = () => {
+  const all = pData?.lots || [];
+  if (demoMode) return all;
+  const from = pDayStart();
+  return all.filter((l) => Number(l.start) >= from);
+};
+const pCurLot = () => { const l = pLots(); return l.find((x) => x.id === pLot) || l[0] || null; };
+async function pCall(params) {
+  const u = new URL(P_URL);
+  for (const [k, v] of Object.entries({ ...params, token: P_TOKEN })) u.searchParams.set(k, v);
+  const res = await fetch(u.toString());
+  return res.json();
+}
+async function pFetch(quiet) {
+  if (!setup.paperless) { render(); return; }
+  if (demoMode) { demoP = demoP || demoPaperless(); pData = demoP; pErr = ''; if (!pLot) pLot = pLots()[0]?.id ?? null; render(); return; }
+  if (!P_URL || !P_TOKEN) { pErr = 'Paperless token is missing in the extension.'; render(); return; }
+  pBusy = true; if (!quiet) render();
+  try {
+    let r = await pCall({ action: 'list' });
+    if (!r.ok) throw new Error(r.error || 'failed');
+    // New day: yesterday's rows move to the sheet's Archive tab (once), so Lots start again from 1.
+    const cut = pDayStart();
+    if (pArchivedFor !== cut && (r.lots || []).some((l) => Number(l.start) < cut)) {
+      pArchivedFor = cut;
+      try {
+        await pCall({ action: 'archive', before: String(cut) });
+        const r2 = await pCall({ action: 'list' });
+        if (r2.ok) r = r2;
+      } catch { /* old script without the archive action: the list is still hidden here */ }
+    }
+    pData = r; pErr = '';
+    if (!pLots().some((l) => l.id === pLot)) pLot = pLots()[0]?.id ?? null; // newest Lot unless you picked another
+    pSave();
+  } catch (e) { pErr = `Could not load the list (${e.message || 'network'}).`; }
+  pBusy = false; render();
+}
+function pItems(lot, rack) { return (lot?.racks || []).filter((r) => rack === 'all' || r.rack === rack).flatMap((r) => r.items); }
+function pNextId(exclude) { const it = pItems(pCurLot(), pRack).find((x) => !x.done && x.id !== exclude); return it ? it.id : null; }
+function pMark(id, value = true) {
+  for (const l of pLots()) for (const r of l.racks) for (const it of r.items) if (it.id === id) it.done = value;
+  pSave();
+  if (!demoMode && P_URL && P_TOKEN) pCall({ action: 'done', id, value: value ? '1' : '0' }).catch(() => {});
+}
+function searchPt(id) {
+  const m = PT_RE.exec(id);
+  if (!m) return;
+  if (searching) return toast('Still searching — wait a moment.');
+  ptSerial = m[2];
+  ptDate = m[1] === dayCode(new Date()) ? 'today' : m[1];
+  ptExtra = ptDates().slice(0, PT_DAYS + 1).some((d) => d.code === m[1]) ? '' : m[1];
+  chrome.storage.local.set({ ptDate });
+  render();
+  doSearch();
+}
+// After Submit from the panel: tick the PT done, then open the next pending one.
+function pAfterSubmit() {
+  if (!setup.paperless) return;
+  const lp = loadedPt(), id = lp ? `${lp.date}PT${lp.serial}`.toUpperCase() : '';
+  if (id) { pMark(id); render(); }
+  if (!setup.pNext) return;
+  setTimeout(() => {
+    const n = pNextId(id);
+    if (!n) return toast('All PT numbers in this Lot are entered.');
+    if (!searching) searchPt(n);
+  }, 3000);
+}
+// The PT that is being worked on right now: the one being searched, else the one HMIS has loaded.
+function pCurrentId() {
+  if (searching?.value) return String(searching.value).toUpperCase();
+  const lp = loadedPt();
+  return lp ? `${lp.date}PT${lp.serial}`.toUpperCase() : '';
+}
+function pSave() { if (!demoMode) chrome.storage.local.set({ paperlessCache: { lot: pLot, rack: pRack, data: pData } }); } // stays as you left it when the panel closes
+function paperlessHtml(full = false) {
+  if (!setup.paperless) return '';
+  const lots = pLots(), lot = pCurLot(), li = lot ? lots.findIndex((l) => l.id === lot.id) : -1;
+  const curId = pCurrentId(), today = dayCode(new Date());
+  const head = `<div class="plhead">
+      <span class="plt">${icon('opacity', 16)}Paperless</span>
+      <span class="plnav">
+        <span class="lotlbl">Lot</span>
+        <div class="lotseg" id="lotSeg" role="listbox" aria-label="Lot — drag to choose">${[...lots].reverse().map((l) => `<button type="button" class="lotopt ${lot && l.id === lot.id ? 'on' : ''}" data-lot="${esc(String(l.id))}" role="option" aria-selected="${!!lot && l.id === lot.id}">${esc(String(l.id))}</button>`).join('') || '<span class="lotnone">—</span>'}</div>
+        ${full ? '' : `<button data-act="pfull" aria-label="Full screen">${icon('maximize', 15)}</button>`}
+      </span></div>`;
+  let body = '';
+  if (pErr) body = `<div class="plerr">${esc(pErr)}</div>`;
+  else if (!lot) body = `<div class="plempty">${pBusy ? 'Loading…' : 'No rack photos yet — send one from the photo app.'}</div>`;
+  else {
+    const all = lot.racks.flatMap((r) => r.items), done = all.filter((x) => x.done).length;
+    let nowRack = null, nowPos = 0;
+    for (const r of lot.racks) r.items.forEach((x, i) => { if (x.id.toUpperCase() === curId) { nowRack = r.rack; nowPos = i + 1; } });
+    const m = PT_RE.exec(curId);
+    const nowTxt = m
+      ? `<b>PT${esc(m[2])}</b><span>${nowRack != null ? `Rack ${nowRack} · slot ${nowPos}` : 'not in this Lot'}${searching ? ' · searching…' : ''}</span>`
+      : `<span class="plidle">Not started — tap a slot or Next pending</span>`;
+    const pct = all.length ? Math.round((done / all.length) * 100) : 0;
+    const racks = lot.racks.map((r) => {
+      const rd = r.items.filter((x) => x.done).length;
+      const cells = r.items.map((x, i) => {
+        return `<button class="plslot ${x.done ? 'done' : ''} ${x.id.toUpperCase() === curId ? 'cur' : ''}" data-act="ppt" data-id="${esc(x.id)}" title="${esc(x.id)}"><i>${i + 1}</i><b>${esc(x.id.toUpperCase())}</b>${x.done ? `<em>${icon('check', 11)}</em>` : ''}</button>`;
+      }).join('');
+      return `<div class="plrack"><div class="plrh"><span>Rack ${r.rack}</span><span>${rd}/${r.items.length}</span></div><div class="plslots">${cells}</div></div>`;
+    }).join('');
+    body = `<div class="plnow"><span class="plk">NOW</span><span class="plnowt">${nowTxt}</span><span class="plcnt">${done}/${all.length}</span></div>
+      <div class="plbar"><i style="width:${pct}%"></i></div>${racks}
+      <button class="btn sm plnext" data-act="pnext">${icon('arrow-right', 14)}Next pending</button>`;
+  }
+  return `<div class="pl${full ? ' full' : ''}">${head}${body}</div>`;
+}
+function paperView() {
+  return `<div class="wrap">${headerHtml()}
+    <div class="page-head"><button class="icon-btn" data-act="back" aria-label="Back">${icon('arrow-left', 20)}</button>Paperless</div>
+    ${setup.paperless ? paperlessHtml(true) : '<div class="empty"><span>Turn on Paperless entry in Setup.</span></div>'}
+  </div>`;
+}
+
 // ───────── Setup box ─────────
 // Setup box (opens from the Setup card)
 function setupHtml() {
@@ -1084,8 +1283,19 @@ function setupHtml() {
     <div class="setup-sub">Customise how Pathhelp works with HMIS</div>
     ${row('autoConfirm', 'clipboard-check', 'Confirm', 'Ticks Confirm on every row when you search a patient or open this panel')}
     ${row('autoAtyp', 'microscope', 'Add Atypical', 'Puts “..” in Atypical Cell so the row gets saved')}
-    ${row('autoMp', 'clipboard-paste', 'Add MP', 'Pastes your MP text into an empty MP row. That row is not auto-confirmed')}
-    ${row('autoPlt', 'button-cursor', 'Add Platelet', 'Bumps Platelet up by a random 60–100 (×10³) when the patient loads')}
+    <div class="sgroup">
+      ${row('autoMp', 'clipboard-paste', 'Add MP', 'Pastes your MP text into an empty MP row')}
+      <div class="mpsel" ${setup.autoMp ? '' : 'hidden'}>
+        <div class="mpseg ${setup.mpConfirm ? 'right' : ''}" id="mpSeg" role="radiogroup" aria-label="MP confirm mode">
+          <button type="button" class="mpopt" data-act="mpmode" data-v="0" role="radio" aria-checked="${!setup.mpConfirm}">No auto confirm</button>
+          <button type="button" class="mpopt" data-act="mpmode" data-v="1" role="radio" aria-checked="${!!setup.mpConfirm}">Auto confirm</button>
+          <span class="mpthumb" id="mpThumb">${setup.mpConfirm ? 'Auto confirm' : 'No auto confirm'}</span>
+        </div>
+        <small class="mphint">Drag or tap to choose</small>
+      </div>
+    </div>
+    ${row('autoPlt', 'button-cursor', 'Add Platelet', 'Platelet 80–119 → random 140–160, 120–149 → random 150–199 (×10³) when the patient loads')}
+    ${row('autoOpen', 'app-window-filled', 'Open after Submit', 'Opens this panel again after you Submit. Shortcut to open it any time: Alt+Z (change at chrome://extensions/shortcuts)')}
     <div class="dlg-actions"><button class="btn" data-x="close">Done</button></div>
   </div>`;
 }
@@ -1093,8 +1303,26 @@ function openSetup() {
   dlg.innerHTML = setupHtml();
   const shut = () => dlg.close();
   dlg.querySelector('[data-x="close"]').onclick = shut;
+  initMpSeg();
   dlg.onclick = (e) => { if (e.target === dlg) shut(); };
-  dlg.onclose = () => { dlg.onclick = null; dlg.onclose = null; };
+  const before = JSON.stringify(setup), mpBefore = JSON.stringify([setup.autoMp, setup.mpConfirm]);
+  dlg.onclose = () => {
+    dlg.onclick = null; dlg.onclose = null;
+    // Demo mode: replay a fresh sample patient so the Setup options can be seen working right away.
+    if (demoMode && JSON.stringify(setup) !== before) {
+      demoValues = { ...DEMO.values }; demoExtras = DEMO.extras.map((x) => ({ ...x })); demoConfirm = { ...DEMO.confirm };
+      lastAutoKey = '';
+      setState(demoState());
+      toast('Demo reloaded with your Setup applied');
+    } else if (!demoMode && state && setup.autoMp && (JSON.stringify([setup.autoMp, setup.mpConfirm]) !== mpBefore)) {
+      // Real mode: Add MP / its confirm mode was just changed — apply it to the patient already open (auto options normally run once per patient load).
+      (async () => {
+        await pasteMp(state);
+        if (setup.mpConfirm) await send({ type: 'setConfirm', key: 'mp', on: true });
+      })();
+    }
+    if (!(demoMode && JSON.stringify(setup) !== before)) pFetch(true); // refresh the Paperless card (or hide it)
+  };
   dlg.showModal();
 }
 function toggleSetupOpt(el) {
@@ -1103,7 +1331,48 @@ function toggleSetupOpt(el) {
   saveSetup();
   el.querySelector('.sw')?.classList.toggle('on', setup[k]);
   el.setAttribute('aria-checked', String(setup[k]));
+  if (k === 'autoMp') { const m = dlg.querySelector('.mpsel'); if (m) m.hidden = !setup.autoMp; }
+  if (k === 'paperless') { render(); pFetch(true); }
 }
+
+// Add MP: slider (No auto confirm ⇄ Auto confirm). Tap a side (real buttons, same click path as the other rows) or drag the thumb.
+function setMpMode(on) {
+  setup.mpConfirm = !!on; saveSetup();
+  const seg = dlg.querySelector('#mpSeg'), th = dlg.querySelector('#mpThumb');
+  if (!seg || !th) return;
+  seg.classList.toggle('right', !!on);
+  th.textContent = on ? 'Auto confirm' : 'No auto confirm';
+  seg.querySelectorAll('.mpopt').forEach((o) => o.setAttribute('aria-checked', String((o.dataset.v === '1') === !!on)));
+}
+function initMpSeg() {
+  const seg = dlg.querySelector('#mpSeg'), th = dlg.querySelector('#mpThumb');
+  if (!seg || !th) return;
+  let drag = null;
+  th.addEventListener('pointerdown', (e) => {
+    const tw = th.offsetWidth;
+    drag = { x0: e.clientX, base: setup.mpConfirm ? tw : 0, w: tw, x: setup.mpConfirm ? tw : 0, moved: false };
+    try { th.setPointerCapture(e.pointerId); } catch {}
+    seg.classList.add('drag');
+  });
+  th.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x0;
+    if (Math.abs(dx) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    drag.x = Math.max(0, Math.min(drag.w, drag.base + dx));
+    th.style.transform = `translateX(${drag.x}px)`;
+  });
+  const end = (e) => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    seg.classList.remove('drag');
+    th.style.transform = '';
+    if (e.type !== 'pointercancel' && d.moved) setMpMode(d.x > d.w / 2);
+  };
+  th.addEventListener('pointerup', end);
+  th.addEventListener('pointercancel', end);
+}
+
 // Confirm / Add Atypical / Add MP (Setup): run once per patient load (after a search, or when the panel first sees the patient).
 function trackAuto(next) {
   if (!next || !(next.patient.name || next.patient.reg) || !Object.keys(next.values).length) return;
@@ -1112,21 +1381,28 @@ function trackAuto(next) {
   lastAutoKey = key;
   if (setup.autoConfirm || setup.autoAtyp || setup.autoMp || setup.autoPlt) runAuto(next);
 }
+// Add MP: paste the MP text into an empty MP row (says why when it can't, so it never fails silently).
+async function pasteMp(next) {
+  if (!next || !('mp' in next.values)) return toast('No MP row on this page.');
+  if (String(next.values.mp).trim()) return toast('MP row already has text — left as it is.');
+  const r = await send({ type: 'write', updates: [{ key: 'mp', value: toSingleLine(tplText('mp')) }] });
+  if (r?.written?.length) { session.actions.add('MP'); scheduleHistory(); toast('MP text added'); }
+  else if (r?.pending?.length) toast('MP will be added when you leave that field.');
+  else toast('Could not write the MP row (locked or not found).');
+}
 async function runAuto(next) {
   if (setup.autoAtyp && 'atyp' in next.values && !String(next.values.atyp).trim()) await send({ type: 'write', updates: [{ key: 'atyp', value: '..' }] });
   if (setup.autoPlt) await bumpPlatelet(next);
   const skip = [];
   if (setup.autoMp && 'mp' in next.values) {
-    skip.push('mp'); // Add MP: the MP row is never auto-confirmed — the technician checks it first
-    if (!String(next.values.mp).trim()) {
-      const r = await send({ type: 'write', updates: [{ key: 'mp', value: toSingleLine(tplText('mp')) }] });
-      if (r?.written?.length) { session.actions.add('MP'); scheduleHistory(); toast('MP text added'); }
-    }
+    if (!setup.mpConfirm) skip.push('mp'); // "No auto confirm": the MP row is never auto-confirmed — the technician checks it first
+    await pasteMp(next);
   }
   if (setup.autoConfirm) {
     const r = await send({ type: 'confirm', skip });
     if (r?.ticked) toast(`Confirmed ${r.ticked} row${r.ticked > 1 ? 's' : ''}`);
   }
+  if (setup.autoMp && setup.mpConfirm && 'mp' in next.values) await send({ type: 'setConfirm', key: 'mp', on: true }); // "Auto confirm": tick the MP row too
 }
 
 // Submit card (bottom nav): presses HMIS's own Submit button.
@@ -1145,7 +1421,16 @@ async function onSubmit() {
   if (!canSubmit()) return toast('Open a patient first.');
   submitting = true; updateNav();
   launchRocket();
-  if (demoMode) { setTimeout(() => toast('Demo mode — nothing was submitted.'), 400); submitting = false; updateNav(); return; }
+  if (demoMode) {
+    try {
+      if (setup.autoAtyp && 'atyp' in state.values && !String(state.values.atyp).trim()) await send({ type: 'write', updates: [{ key: 'atyp', value: '..' }] });
+      const rows = Object.keys(state.confirm || {});
+      const unconf = rows.filter((k) => !state.confirm[k]?.on).length;
+      pAfterSubmit();
+      setTimeout(() => toast(unconf ? `Demo submit worked — ${unconf} row${unconf > 1 ? 's' : ''} not confirmed. Nothing sent to HMIS.` : 'Demo submit worked — all rows confirmed. Nothing sent to HMIS.'), 400);
+    } finally { submitting = false; updateNav(); }
+    return;
+  }
   try {
     if (setup.autoAtyp && 'atyp' in state.values && !String(state.values.atyp).trim()) await send({ type: 'write', updates: [{ key: 'atyp', value: '..' }] });
     const r = await send({ type: 'submit' });
@@ -1153,6 +1438,7 @@ async function onSubmit() {
     else if (!r.ok) toast('Submit button not found on this page.');
     else {
       toast('Submitted to HMIS');
+      pAfterSubmit();
       focusAfterSubmit = state.patient.reg;
       setTimeout(() => { if (focusAfterSubmit !== null) { focusAfterSubmit = null; focusPt(); } }, 2500); // fallback if HMIS keeps the same patient on screen
     }
@@ -1163,9 +1449,9 @@ function render() {
   if (!auth) { showLogin(); return; }
   navRoot.hidden = false;
   const ae = document.activeElement;
-  const keep = ae && (ae.id === 'ptSerial' || ae.classList?.contains('lisin')) ? { id: ae.id, v: ae.value, s: ae.selectionStart, e: ae.selectionEnd } : null;
+  const keep = ae && (ae.id === 'ptSerial' || ae.classList?.contains('lisin') || ae.classList?.contains('pxin')) ? { id: ae.id, v: ae.value, s: ae.selectionStart, e: ae.selectionEnd } : null;
   rendering = true;
-  app.innerHTML = view === 'history' ? historyView() : view === 'about' ? aboutView() : view === 'pay' ? payView() : view === 'inspect' ? inspectView() : mainView();
+  app.innerHTML = view === 'history' ? historyView() : view === 'about' ? aboutView() : view === 'pay' ? payView() : view === 'inspect' ? inspectView() : view === 'paper' ? paperView() : mainView();
   rendering = false;
   updateNav();
   if (keep) {
@@ -1217,8 +1503,26 @@ document.addEventListener('click', (e) => {
     case 'ptgo': doSearch(); return;
     case 'setup': openSetup(); return;
     case 'setopt': toggleSetupOpt(el); return;
+    case 'pxcfg': pxOpen = !pxOpen; render(); return;
+    case 'mpmode': setMpMode(el.dataset.v === '1'); return;
     case 'submit': onSubmit(); return;
     case 'ptup': stepDate(1); return;
+    case 'pfull': setView('paper'); return;
+    case 'plotold': case 'plotnew': {
+      const l = pLots(), i = l.findIndex((x) => x.id === pCurLot()?.id), n = act === 'plotold' ? i + 1 : i - 1;
+      if (l[n]) { pLot = l[n].id; pRack = 'all'; pSave(); render(); }
+      return;
+    }
+    case 'prack': pRack = el.dataset.r === 'all' ? 'all' : Number(el.dataset.r); render(); return;
+    case 'ppt': if (view !== 'main') setView('main'); searchPt(el.dataset.id); return; // from the full Paperless screen: jump to Home and search
+    case 'pprev': case 'pnextslot': {
+      const lot = pCurLot(); if (!lot) return;
+      const seq = lot.racks.flatMap((r) => r.items).map((x) => x.id), cur = pCurrentId(), ci = seq.findIndex((x) => x.toUpperCase() === cur);
+      const id = act === 'pprev' ? seq[ci - 1] : ci >= 0 ? seq[ci + 1] : pNextId('');
+      id ? searchPt(id) : toast(act === 'pprev' ? 'This is the first one.' : 'This is the last one.');
+      return;
+    }
+    case 'pnext': { const n = pNextId(''); if (n && view !== 'main') setView('main'); n ? searchPt(n) : toast('Nothing pending here.'); return; }
     case 'ptdown': stepDate(-1); return;
     case 'lis': onLisCalc(); return;
     case 'cfm': onCfm(el.dataset.key); return;
@@ -1253,6 +1557,29 @@ document.addEventListener('focusout', (e) => {
   }, 0);
 });
 
+// Lot picker: tap or drag across the lots, release to open the one under your finger.
+let lotDrag = null;
+function lotUnder(x, y) { const el = document.elementFromPoint(x, y)?.closest?.('.lotopt'); return el && el.closest('#lotSeg') ? el : null; }
+function lotMark(el) { document.querySelectorAll('#lotSeg .lotopt').forEach((o) => o.classList.toggle('on', o === el)); }
+document.addEventListener('pointerdown', (e) => {
+  const o = e.target.closest?.('#lotSeg .lotopt'); if (!o) return;
+  lotDrag = { id: o.dataset.lot }; lotMark(o);
+  try { document.getElementById('lotSeg').setPointerCapture(e.pointerId); } catch {}
+});
+document.addEventListener('pointermove', (e) => {
+  if (!lotDrag) return;
+  const o = lotUnder(e.clientX, e.clientY); if (o) { lotDrag.id = o.dataset.lot; lotMark(o); }
+});
+const lotEnd = () => {
+  if (!lotDrag) return;
+  const id = lotDrag.id; lotDrag = null;
+  const l = pLots().find((x) => String(x.id) === id);
+  if (l && l.id !== pCurLot()?.id) { pLot = l.id; pRack = 'all'; pSave(); }
+  render();
+};
+document.addEventListener('pointerup', lotEnd);
+document.addEventListener('pointercancel', lotEnd);
+
 document.addEventListener('input', (e) => {
   if (e.target.classList?.contains('lisin')) { onLisInput(e.target); return; }
   if (e.target.id === 'ptSerial') {
@@ -1263,6 +1590,7 @@ document.addEventListener('input', (e) => {
     refreshPtBar();
     return;
   }
+  if (e.target.classList?.contains('pxin')) { setup[e.target.id] = e.target.value.trim(); saveSetup(); return; }
   if (e.target.id === 'histSearch') {
     histQuery = e.target.value;
     $('#histList').innerHTML = historyRows();
@@ -1283,6 +1611,13 @@ chrome.tabs.onUpdated.addListener((id, info) => { if (id === tabId && info.statu
   const { session } = await chrome.storage.local.get('session');
   if (session && session.until > Date.now() && getProfile(session.name)) auth = session;
   else if (session) chrome.storage.local.remove('session');
+  // Paperless list refreshes by itself: every 20 s while the panel is open, and as soon as it becomes visible again.
+  const autoRefresh = () => {
+    if (!auth || !setup.paperless || demoMode || pBusy || document.visibilityState !== 'visible') return;
+    if (view === 'main' || view === 'paper') pFetch(true);
+  };
+  setInterval(autoRefresh, 20000);
+  document.addEventListener('visibilitychange', autoRefresh);
   setInterval(() => {
     if (auth && Date.now() >= auth.until) { logout(); return; }
     const dc = dayCode(new Date()); // midnight passed: "Today" and the 7-day list move on
@@ -1297,6 +1632,8 @@ chrome.tabs.onUpdated.addListener((id, info) => { if (id === tabId && info.statu
   if (ptDate !== 'today' && !ptDates().some((d) => d.code === ptDate)) ptDate = 'today';
   lastDayCode = dayCode(new Date());
   if (demoMode) { demoValues = { ...DEMO.values }; demoExtras = DEMO.extras.map((x) => ({ ...x })); demoConfirm = { ...DEMO.confirm }; demoHist = demoHistory(); }
+  const { paperlessCache: pc } = await chrome.storage.local.get('paperlessCache');
+  if (pc && pc.data) { pData = pc.data; pLot = pc.lot ?? null; pRack = pc.rack ?? 'all'; }
   initNav();
   render();
   // quote strip: fade to the next quote every 5 seconds
@@ -1311,5 +1648,6 @@ chrome.tabs.onUpdated.addListener((id, info) => { if (id === tabId && info.statu
     }, 220);
   }, 5000);
   await pull();
+  if (setup.paperless) pFetch(true);
   focusPt();
 })();

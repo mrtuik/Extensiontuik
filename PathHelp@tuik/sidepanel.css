@@ -317,7 +317,8 @@ dialog textarea { width: 100%; min-height: 150px; border: 1px solid var(--border
 .spin { width: 11px; height: 11px; border: 2px solid #d4d4d8; border-top-color: #060e27; border-radius: 50%; animation: ptspin 0.8s linear infinite; }
 @keyframes ptspin { to { transform: rotate(360deg); } }
 
-/* Setup card (under the quote) — MP-style outline card, full width */
+/* Setup row — attached under the PT search input, inside the same card */
+.psetrow { display: flex; align-items: center; gap: 12px; margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--border); }
 .qwrap { display: flex; flex-direction: column; gap: 10px; }
 
 /* Setup box */
@@ -331,6 +332,17 @@ button.srow:hover { background: var(--muted); }
 .stxt b { font-size: 13px; font-weight: 600; }
 .stxt small { color: var(--muted-fg); font-size: 11.5px; line-height: 1.35; }
 .setup .dlg-actions { margin-top: 4px; }
+.sgroup { border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.sgroup .srow { border: 0; background: transparent; border-radius: 10px; }
+.mpsel { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 4px; }
+.mpsel[hidden] { display: none; }
+.mpseg { position: relative; display: grid; grid-template-columns: 1fr 1fr; height: 38px; border-radius: 999px; background: var(--muted); border: 1px solid var(--border); user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.mpopt { position: relative; z-index: 1; display: grid; place-items: center; border: 0; background: transparent; padding: 0; font: 600 12px var(--sans, inherit); color: var(--muted-fg); cursor: pointer; border-radius: 999px; -webkit-tap-highlight-color: transparent; }
+.mpthumb { touch-action: none; position: absolute; z-index: 2; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); border-radius: 999px; background: var(--primary); cursor: grab; transition: transform 0.18s ease; box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
+.mpseg.right .mpthumb { transform: translateX(100%); }
+.mpseg.drag .mpthumb { transition: none; cursor: grabbing; }
+.mpthumb { display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 600; }
+.mphint { color: var(--muted-fg); font-size: 11px; text-align: center; }
 
 /* Platelet card on the home page — icon tile, title + hint, input on the right */
 .sinput { flex: none; width: 84px; height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--foreground); font: 600 14px var(--mono); text-align: right; }
@@ -416,3 +428,100 @@ body { width: 380px; height: 600px; overflow-y: auto; overflow-x: hidden; }
 .insp-trigger { border: 1px solid var(--border) !important; border-radius: 7px !important; color: #000 !important; padding: 5px !important; }
 .insp-trigger:hover { background: var(--muted); }
 .insp-demo { border: 1px dashed var(--border); border-radius: var(--radius); padding: 10px 12px; font-size: 12px; color: var(--muted-fg); margin-bottom: 8px; }
+
+/* Setup → Paperless fields */
+.psetup { display: flex; flex-direction: column; gap: 8px; }
+.psetup[hidden] { display: none; }
+.sinput.wide { width: 100%; text-align: left; font: 12px var(--mono); height: 36px; }
+
+/* Paperless card (home, above the quote) + full-screen page */
+.pl { border: 1px solid var(--border); border-radius: 14px; background: #fff; padding: 12px; display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.plhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plt { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.plnav { display: flex; align-items: center; gap: 4px; font-size: 12.5px; }
+.plnav button { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.plnav button:disabled { opacity: 0.35; }
+.plnav b { min-width: 42px; text-align: center; }
+.plnav .spin svg { animation: ptspin 0.8s linear infinite; }
+.plnow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--card-dark, #09090b); color: #fff; }
+.plk { font: 700 10px var(--mono); letter-spacing: 0.12em; color: #a1a1aa; }
+.plnowt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.plnowt b { font: 700 18px var(--mono); }
+.plnowt span { font-size: 11.5px; color: #a1a1aa; }
+.plnowt .plidle { font-size: 12px; }
+.plcnt { font: 700 14px var(--mono); }
+.plbar { height: 4px; border-radius: 99px; background: var(--muted); overflow: hidden; margin-top: -4px; }
+.plbar i { display: block; height: 100%; background: var(--primary); transition: width 0.25s; }
+.plrack { display: flex; flex-direction: column; gap: 6px; }
+.plrh { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 600; color: var(--muted-fg); }
+.plslots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.plslot { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 46px; padding: 4px 2px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.plslot i { font: 600 9px var(--mono); color: var(--muted-fg); font-style: normal; }
+.plslot b { font: 700 14px var(--mono); }
+.plslot small { font: 600 8.5px var(--mono); color: var(--muted-fg); }
+.plslot em { position: absolute; top: 3px; right: 4px; color: var(--muted-fg); font-style: normal; display: flex; }
+.plslot.done { background: var(--muted); } .plslot.done b { color: var(--muted-fg); text-decoration: line-through; }
+.plslot.cur { background: var(--primary); border-color: var(--primary); } .plslot.cur b, .plslot.cur i, .plslot.cur small, .plslot.cur em { color: #fff; text-decoration: none; }
+.plnext { align-self: flex-start; }
+.plerr { color: #dc2626; font-size: 12px; } .plempty { color: var(--muted-fg); font-size: 12px; }
+.pl.full { margin-top: 0; }
+.pl.full .plslots { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.pl.full .plslot { flex-direction: row; justify-content: flex-start; gap: 10px; padding: 10px 12px; min-height: 52px; }
+.pl.full .plslot i { font-size: 12px; width: 18px; }
+.pl.full .plslot b { font-size: 18px; }
+.pl.full .plslot small { font-size: 10px; margin-left: auto; }
+.pl.full .plnowt b { font-size: 24px; }
+
+/* Paperless options — attached under the PT search input, inside the same card */
+.pxset { margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.pxhead { display: flex; align-items: center; gap: 10px; }
+.pxcfg { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted-fg); transition: transform 0.15s; }
+.pxcfg.open { transform: rotate(180deg); }
+.pxsw { flex: none; display: grid; place-items: center; width: 44px; height: 32px; padding: 0; border: 0; background: transparent; }
+.pxbody { display: flex; flex-direction: column; gap: 8px; }
+.pxnext { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 2px; border: 0; background: transparent; text-align: left; }
+
+.pxset { color: var(--foreground); }
+.pxset .stxt b { color: var(--foreground); }
+.pxset .stxt small { color: var(--muted-fg); }
+.pxset.closed { padding-top: 0; border-top: 0; margin-top: -4px; align-items: center; }
+.pxset.closed .pxcfg { width: 100%; height: 26px; }
+
+/* Paperless: Lot drag picker, full PT numbers, home Previous / Next */
+.plnav { min-width: 0; }
+.lotlbl { font: 600 11px var(--mono); color: var(--muted-fg); }
+.lotseg { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); touch-action: none; user-select: none; overflow: hidden; max-width: 150px; }
+.plnav .lotopt { width: auto; min-width: 30px; height: 26px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; font: 700 12.5px var(--mono); color: var(--muted-fg); }
+.plnav .lotopt.on { background: var(--primary); color: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); }
+.lotnone { padding: 0 10px; color: var(--muted-fg); }
+.plslot b { font: 700 12.5px var(--mono); letter-spacing: 0; white-space: nowrap; }
+.pl.full .plslot b { font-size: 12.5px; }
+.pl.full .plslot { gap: 8px; padding: 10px 8px; }
+.pxnav { display: flex; gap: 8px; }
+.pxnb { flex: 1; height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #d4d4d8; border-radius: 10px; background: #fff; color: var(--foreground); font: 600 13px var(--sans); }
+.pxnb:disabled { opacity: 0.35; }
+.pxnb:not(:disabled):active { background: var(--muted); }
+
+/* match the search card's 4px corners */
+.pxnb { border-radius: 4px; }
+.plnow.pxnow { border-radius: 4px; }
+
+/* Paperless screen: 4px corners like the rest, tighter sizes, nothing overflows */
+.pl { border-radius: 4px; min-width: 0; padding: 10px; }
+.pl.full .plslots, .plslots { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.pl .plslot { border-radius: 4px; min-width: 0; min-height: 40px; padding: 6px 8px; }
+.pl.full .plslot { min-height: 40px; padding: 6px 8px; gap: 8px; }
+.pl .plslot i { width: 16px; text-align: right; }
+.pl .plslot b { overflow: hidden; text-overflow: ellipsis; }
+.plnav { gap: 6px; flex: none; }
+.plnav > button { width: 32px; height: 32px; border-radius: 4px; }
+.lotseg { height: 32px; box-sizing: border-box; padding: 2px; gap: 2px; border-radius: 4px; align-items: stretch; }
+.plnav .lotopt { height: auto; min-width: 28px; padding: 0 8px; border-radius: 3px; }
+.plnow { border-radius: 4px; padding: 8px 12px; }
+.pl.full .plnowt b { font-size: 20px; }
+.plbar { border-radius: 2px; }
+
+/* test tags next to the PT preview (MP, PBS, BT, CT, ESR, ABO …) */
+.psmsg { flex-wrap: wrap; row-gap: 6px; }
+.tchips { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.tchip { padding: 3px 7px; border: 1px solid #d4d4d8; border-radius: 4px; background: var(--muted); color: var(--foreground); font: 700 10.5px/1 var(--mono); letter-spacing: 0.04em; }

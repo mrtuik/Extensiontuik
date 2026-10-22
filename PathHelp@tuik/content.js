@@ -308,5 +308,25 @@
     characterData: true,
   });
 
+  // ───── Open Pathhelp again after HMIS's Submit (Setup → "Open after Submit"; needs a browser that allows chrome.action.openPopup) ─────
+  const REOPEN_KEY = 'pathhelp_reopen_ts';
+  async function reopenEnabled() {
+    try { const { setup } = await chrome.storage.local.get('setup'); return setup?.autoOpen !== false; } catch (_) { return false; }
+  }
+  async function askOpen() {
+    if (!(await reopenEnabled())) return;
+    try { chrome.runtime.sendMessage({ type: 'openPopup' }); } catch (_) {}
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target?.closest?.('[id$="_btnSubmit"]');
+    if (!b || b.disabled) return;
+    try { sessionStorage.setItem(REOPEN_KEY, String(Date.now())); } catch (_) {}
+    setTimeout(() => { try { if (sessionStorage.getItem(REOPEN_KEY)) { sessionStorage.removeItem(REOPEN_KEY); askOpen(); } } catch (_) {} }, 2500); // no page reload (partial postback) → open anyway
+  }, true);
+  try { // the page reloaded because of Submit → open now
+    const ts = +sessionStorage.getItem(REOPEN_KEY);
+    if (ts) { sessionStorage.removeItem(REOPEN_KEY); if (Date.now() - ts < 20000) askOpen(); }
+  } catch (_) {}
+
   push(true); // initial state on load / after every ASP.NET postback
 })();
