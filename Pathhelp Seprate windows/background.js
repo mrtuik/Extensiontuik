@@ -11,7 +11,7 @@ async function isPanelMode() {
 }
 
 async function isWinMode() {
-  try { const { setup } = await chrome.storage.local.get('setup'); return !!setup?.winMode && !setup?.sidePanel; } catch (_) { return false; }
+  try { const { setup } = await chrome.storage.local.get('setup'); return setup?.winMode !== false && !setup?.sidePanel; } catch (_) { return true; }
 }
 
 // Separate-window mode (works on old Chrome without chrome.sidePanel): one small popup-type window, re-focused if already open.
@@ -19,16 +19,18 @@ let winId = null;
 async function openWindow() {
   try { if (winId != null) { await chrome.windows.update(winId, { focused: true }); return; } } catch (_) { winId = null; }
   try {
-    const w = await chrome.windows.create({ url: 'sidepanel.html?mode=window', type: 'popup', width: 420, height: 720 });
+    const w = await chrome.windows.create({ url: chrome.runtime.getURL('sidepanel.html?mode=window'), type: 'popup', width: 420, height: 720 });
     winId = w.id;
-  } catch (_) {}
+  } catch (_) {
+    try { await chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?mode=window') }); } catch (_2) {} // last resort: a normal tab
+  }
 }
+async function openWindowIfMode() { if (await isWinMode()) openWindow(); }
 chrome.windows.onRemoved.addListener((id) => { if (id === winId) winId = null; });
 
 async function applyMode() {
   const panel = await isPanelMode();
   const win = await isWinMode();
-  try { await chrome.action.setIcon({ path: win ? { 16: 'icons/mouse-16.png', 48: 'icons/mouse-48.png', 128: 'icons/mouse-128.png' } : { 16: 'icons/16.png', 48: 'icons/48.png', 128: 'icons/128.png' } }); } catch (_) {} // separate-windows mode has its own toolbar icon
   try { await chrome.action.setPopup({ popup: panel || win ? '' : 'sidepanel.html' }); } catch (_) {}
   try {
     if (chrome.sidePanel?.setOptions) await chrome.sidePanel.setOptions({ path: PANEL_PATH, enabled: panel });
@@ -52,9 +54,11 @@ function openPanel(windowId) {
 
 // Only fires in side panel mode (in popup mode the icon opens the popup itself).
 chrome.action.onClicked.addListener((tab) => {
-  isWinMode().then((win) => { if (win) openWindow(); });
-  if (!chrome.sidePanel) return;
-  openPanel(tab?.windowId);
-  // if the panel was already open, ask it to put the cursor in the PT box
-  setTimeout(() => { try { chrome.runtime.sendMessage({ type: 'focusPt' }).catch(() => {}); } catch (_) {} }, 250);
+  isWinMode().then((win) => {
+    if (win) { openWindow(); return; }
+    if (!chrome.sidePanel) return;
+    openPanel(tab?.windowId);
+    // if the panel was already open, ask it to put the cursor in the PT box
+    setTimeout(() => { try { chrome.runtime.sendMessage({ type: 'focusPt' }).catch(() => {}); } catch (_) {} }, 250);
+  });
 });

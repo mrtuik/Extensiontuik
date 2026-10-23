@@ -1,4 +1,4 @@
-# Pathhelp with tuik — v2.4.0
+# Pathhelp @tuik — v3.0.0
 
 1. `chrome://extensions` → enable Developer mode → **Load unpacked** → pick this folder.
 2. Open the HMIS result-entry page, click the toolbar icon (or press **Alt+Z**) → Pathhelp opens as a toolbar popup (default).

@@ -58,7 +58,7 @@ let lastDayCode = '';
 // Paperless backend (Google Apps Script web app) — built in, nothing to type in the panel.
 const P_URL = 'https://script.google.com/macros/s/AKfycbyNGwI_BnkUvcKfsY4enbZPSimzMdua_6wrjCBR9JgQqfrTUcU1q4f0GhEoKN2i2Lt-/exec';
 const P_TOKEN = '5ac2739777e8'; // Apps Script token (from setup → Execution log)
-let setup = { autoConfirm: false, autoAtyp: false, autoMp: false, mpConfirm: false, autoPlt: false, sidePanel: false, winMode: false, paperless: false, pUrl: '', pToken: '', pNext: true }; // Setup box options (saved on this device)
+let setup = { autoConfirm: false, autoAtyp: false, autoMp: false, mpConfirm: false, autoPlt: false, sidePanel: false, winMode: true, paperless: false, pUrl: '', pToken: '', pNext: true }; // Setup box options (saved on this device)
 let lastAutoKey = ''; // patient load that auto-confirm / auto-atypical last ran for
 let lisCalc = { reg: null, vals: {} }; // boxes the LIS button calculated for this patient (shown with a "calc" tag until edited)
 let lisFill = { reg: null, vals: {} }; // boxes the LIS button auto-filled with random normal values (re-rolled on the next click, "auto" tag until edited)
@@ -100,7 +100,7 @@ async function loadTemplates() { ({ templates: tpl = {} } = await chrome.storage
 const saveTemplates = () => chrome.storage.local.set({ templates: tpl });
 
 // ───────── storage: Setup options ─────────
-async function loadSetup() { const { setup: s } = await chrome.storage.local.get('setup'); setup = { autoConfirm: false, autoAtyp: false, autoMp: false, mpConfirm: false, autoPlt: false, sidePanel: false, winMode: false, paperless: false, pUrl: '', pToken: '', pNext: true, ...(s || {}) }; }
+async function loadSetup() { const { setup: s } = await chrome.storage.local.get('setup'); setup = { autoConfirm: false, autoAtyp: false, autoMp: false, mpConfirm: false, autoPlt: false, sidePanel: false, winMode: true, paperless: false, pUrl: '', pToken: '', pNext: true, ...(s || {}) }; }
 const saveSetup = () => chrome.storage.local.set({ setup });
 
 function ageChip(age) {
@@ -614,7 +614,7 @@ function accessLeft() {
 }
 
 function loginView() {
-  const brand = `<div class="lbrand"><img src="icons/128.png" alt="" /><span>Pathhelp with tuik</span></div>`;
+  const brand = `<div class="lbrand"><img src="icons/128.png" alt="" /><span>Pathhelp @tuik</span></div>`;
   const note = `<p class="lnote">Access stays open for ${SESSION_HOURS} hours</p>`;
   if (!loginPick) {
     return `<div class="login">${brand}
@@ -665,7 +665,7 @@ function logout() {
 function headerHtml() {
   return `
   <div class="header">
-    <div class="brand"><span class="logo">${icon('app-window-filled', 22)}</span><span class="brand-name">Pathhelp with tuik</span></div>
+    <div class="brand"><span class="logo"><img src="icons/48.png" width="22" height="22" alt="" /></span><span class="brand-name">Pathhelp @tuik</span></div>
     <div class="hactions">
       <button class="icon-btn insp-trigger" data-act="inspect" aria-label="Row inspector" title="Row inspector — see every field's id on this HMIS page">${icon('compass-tool', 18)}</button>
       <button class="avatar${getProfile(auth?.name)?.avatar ? ' has-av' : ''}" data-act="menu" data-menu aria-label="Profile">${auth ? avatarInner(auth.name, 34) : icon('user', 16)}</button>
@@ -994,7 +994,7 @@ function aboutView() {
   return `<div class="wrap">${headerHtml()}
     <div class="page-head"><button class="icon-btn" data-act="back" aria-label="Back">${icon('arrow-left', 20)}</button>About</div>
     <div class="card about">
-      <p><b>Pathhelp with tuik</b> · v${esc(v)}</p>
+      <p><b>Pathhelp @tuik</b> · v${esc(v)}</p>
       <p>Helps the pathology technician check CBC values against age- and gender-specific reference ranges, tidy the Differential Count to exactly 100, and paste standard MP / PBS text into HMIS.</p>
       <p>It only ever writes into Result Value inputs. Nothing is submitted or confirmed for you, and no data leaves the browser.</p>
       <p class="muted">Reference ranges are a draft seed and need pathologist sign-off. Credits: tuik.</p>
@@ -1044,7 +1044,7 @@ function inspectView() {
         <button type="button" class="insp-id" data-act="cpid" data-id="${esc(r.id)}" title="Tap to copy this id">${esc(r.id)}</button>
       </div>`).join('')}</div>`;
   return `<div class="wrap"><div class="header">
-    <div class="brand"><span class="logo">${icon('app-window-filled', 22)}</span><span class="brand-name">Pathhelp with tuik</span></div>
+    <div class="brand"><span class="logo"><img src="icons/48.png" width="22" height="22" alt="" /></span><span class="brand-name">Pathhelp @tuik</span></div>
   </div>
     <div class="page-head"><button class="icon-btn" data-act="back" aria-label="Back">${icon('arrow-left', 20)}</button>Row inspector</div>
     <div class="insp-toolbar">

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Pathhelp with tuik",
-  "version": "2.4.7",
+  "name": "Pathhelp @tuik",
+  "version": "3.0.2",
   "description": "Assistant for CBC / PBS / MP result entry: abnormal findings, DC fix, one-tap MP/PBS text. Opens as a toolbar popup or a side panel. Everything stays in the browser.",
   "permissions": [
     "storage",
@@ -11,8 +11,7 @@
     "<all_urls>"
   ],
   "action": {
-    "default_title": "Pathhelp with tuik",
-    "default_popup": "sidepanel.html"
+    "default_title": "Pathhelp @tuik"
   },
   "icons": {
     "16": "icons/16.png",
@@ -39,7 +38,7 @@
         "default": "Alt+Z",
         "mac": "Alt+Z"
       },
-      "description": "Open Pathhelp with tuik (popup or side panel, as chosen in Setup)"
+      "description": "Open Pathhelp @tuik"
     }
   },
   "side_panel": {
